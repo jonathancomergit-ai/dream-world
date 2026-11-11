@@ -1,0 +1,14 @@
+# Python packages imported by the code in this repo.
+# Install PyTorch with CUDA from https://pytorch.org for your GPU first.
+torch
+numpy
+opencv-python
+Pillow
+imageio
+imageio-ffmpeg
+scipy
+pygame
+av
+# Face blurring. The code names this exact version (its bundled CenterFace model).
+deface==1.5.0
+# Also needed, but not from pip: the ffmpeg program on your PATH.

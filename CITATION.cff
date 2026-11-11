@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Dream World: a diffusion world model that dreams a street while you walk through it"
+type: software
+authors:
+  - family-names: Comer
+    given-names: Jonathan
+    alias: Jonjoe1001
+repository-code: "https://github.com/jonathancomergit-ai/dream-world"
+license: MIT
+date-released: "2026-11-11"

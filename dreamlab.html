@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dream Lab</title>
+<style>
+  /* ---- tokens (one dark theme: this is a monitoring console) ---- */
+  :root {
+    color-scheme: dark;
+    --bg:        #0d0e10;
+    --surface-1: #15171a;   /* cards */
+    --surface-2: #1c1f23;   /* inputs, table rows on hover */
+    --border:    #262a30;
+    --text-primary:   #eceef1;
+    --text-secondary: #a4a9b3;
+    --text-muted:     #6c727d;
+    --series-1: #3987e5;    /* the one data hue: blue */
+    --good:     #0ca30c;
+    --warning:  #fab219;
+    --critical: #d03b3b;
+    --radius: 10px;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text-primary);
+         font: 14px/1.5 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---- top bar ---- */
+  .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+            border-bottom: 1px solid var(--border); background: var(--surface-1); flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: .02em; }
+  .logo { width: 22px; height: 22px; border-radius: 6px;
+          background: conic-gradient(from 200deg, #3987e5, #8b6cf0, #3987e5); }
+  .crumb { color: var(--text-muted); font-size: 13px; }
+  .crumb b { color: var(--text-secondary); font-weight: 500; }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 99px;
+          border: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; font-weight: 500; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); font-style: normal; }
+  .pill.live i { background: var(--critical); box-shadow: 0 0 0 3px #d03b3b33; animation: blink 1.6s infinite; }
+  .pill.good i { background: var(--good); }
+  .pill.bad i { background: var(--critical); }
+  .pill.busy i { background: var(--warning); }
+  @keyframes blink { 50% { opacity: .35; } }
+  .clock { color: var(--text-muted); font-size: 12.5px; }
+
+  .wrap { padding: 20px 24px 28px; max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ---- cards ---- */
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
+  .card-h { display: flex; align-items: center; justify-content: space-between; gap: 4px 10px; flex-wrap: wrap;
+            padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  /* scoreboard rows: name | bar side by side; on phones the name sits above its bar */
+  .srow { display: grid; grid-template-columns: minmax(150px, 260px) 1fr; gap: 10px; align-items: center; padding: 3px 0; }
+  .srow .sname { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 700px) {
+    .srow { grid-template-columns: 1fr; gap: 1px; padding: 6px 0; }
+    .srow .sname { white-space: normal; }
+  }
+  .card-h h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+               color: var(--text-secondary); }
+  .card-b { padding: 14px 16px; }
+  .hint { color: var(--text-muted); font-size: 12px; }
+
+  /* ---- KPI tiles ---- */
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .kpi { padding: 14px 16px 10px; position: relative; }
+  .kpi .label { color: var(--text-secondary); font-size: 12.5px; }
+  .kpi .value { font-size: 26px; font-weight: 600; margin: 2px 0 0; line-height: 1.2; }
+  .kpi .value small { font-size: 13px; color: var(--text-muted); font-weight: 400; margin-left: 4px; }
+  .kpi svg { display: block; width: 100%; height: 38px; margin-top: 6px; overflow: visible; }
+  .kpi .tip { position: absolute; top: 10px; right: 12px; font-size: 12px; color: var(--text-secondary);
+              background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; display: none; }
+
+  /* ---- main grid ---- */
+  .main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .main { grid-template-columns: 1fr; } }
+  .side { display: flex; flex-direction: column; gap: 16px; }
+
+  /* dream screen */
+  #screen { position: relative; aspect-ratio: 1280 / 704; background: #000; border-radius: 8px; overflow: hidden; }
+  #screen img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #screen img[hidden] { display: none; }
+  /* full screen: fill the monitor, letterbox instead of cropping, smooth upscale */
+  #screen:fullscreen, #screen.big { aspect-ratio: auto; width: 100vw; height: 100vh; border-radius: 0; background: #000; cursor: none; }
+  #screen:fullscreen img, #screen.big img { object-fit: contain; }
+  #screen.big { position: fixed; inset: 0; z-index: 50; }
+  #screen:fullscreen .fsbar, #screen.big .fsbar { opacity: 0; }
+  #screen:fullscreen:hover .fsbar, #screen.big:hover .fsbar { opacity: 1; }
+  .fsbar { position: absolute; left: 0; right: 0; bottom: 0; display: none; justify-content: space-between; align-items: center;
+           padding: 14px 20px; background: linear-gradient(transparent, #000c); color: var(--text-secondary); font-size: 13px;
+           transition: opacity .3s; cursor: default; }
+  #screen:fullscreen .fsbar, #screen.big .fsbar { display: flex; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+           color: var(--text-muted); padding: 24px; font-size: 13px; }
+  .empty[hidden] { display: none; }
+  .empty b { display: block; color: var(--text-secondary); font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .scrub { width: 100%; margin: 12px 0 2px; accent-color: var(--series-1); }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  button, .btn { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border);
+                 border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: #3a4049; }
+  button[aria-pressed="true"] { border-color: var(--series-1); color: #cfe1fb; }
+  .toolbar label { color: var(--text-secondary); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .toolbar input[type=range] { accent-color: var(--series-1); width: 110px; }
+  .frameno { margin-left: auto; color: var(--text-muted); font-size: 12.5px; }
+
+  /* key/value list */
+  dl { margin: 0; display: grid; grid-template-columns: 96px minmax(0, 1fr); row-gap: 8px; column-gap: 12px; font-size: 13px; }
+  dt { color: var(--text-muted); }
+  dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+  dd code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+
+  /* progress */
+  .prog { margin-bottom: 12px; } .prog:last-child { margin-bottom: 0; }
+  .prog .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; gap: 8px; }
+  .prog .row span:last-child { color: var(--text-secondary); }
+  .track { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .track > div { height: 100%; background: var(--series-1); border-radius: 99px; transition: width .5s; }
+  .ok { color: var(--good); }
+
+  /* bottom grid */
+  .bottom { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 1100px) { .bottom { grid-template-columns: 1fr; } }
+  pre.log { margin: 0; padding: 12px 16px; font: 12px/1.55 var(--mono); color: var(--text-secondary);
+            white-space: pre-wrap; word-break: break-word; height: 260px; overflow: auto; background: #0b0c0e;
+            border-radius: 0 0 var(--radius) var(--radius); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; color: var(--text-muted); font-size: 12px; padding: 0 16px 8px; }
+  td { padding: 9px 16px; border-top: 1px solid var(--border); color: var(--text-secondary); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--surface-2); }
+  tbody tr.sel td { color: var(--text-primary); background: #1a2333; }
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .status::before { font-size: 11px; }
+  .s-done { color: var(--good); }   .s-done::before { content: "✓"; }
+  .s-bad  { color: var(--critical); } .s-bad::before { content: "✕"; }
+  .s-run  { color: var(--warning); } .s-run::before { content: "●"; animation: blink 1.6s infinite; }
+
+  .tablewrap { overflow-x: auto; padding-top: 12px; }
+  @media (max-width: 600px) {
+    .topbar { padding: 12px 16px; } .wrap { padding: 16px; gap: 12px; }
+    .kpis { gap: 12px; } .kpi .value { font-size: 22px; }
+    th, td { padding-left: 10px; padding-right: 10px; }
+    dl { grid-template-columns: 80px minmax(0, 1fr); }
+  }
+  .vids { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .vids figure { margin: 0; }
+  .vids video { width: 100%; border-radius: 6px; background: #000; display: block; }
+  .vids figcaption { font-size: 12px; color: var(--text-muted); margin-top: 5px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- GPU KPIs: one series each, so no legend; the label names it -->
+  <section class="kpis">
+    <div class="card kpi" data-k="vram"><div class="label">GPU memory</div>
+      <div class="value num" id="k-vram">–</div><svg id="s-vram"></svg><span class="tip"></span></div>
+    <div class="card kpi" data-k="util"><div class="label">GPU load</div>
+      <div class="value num" id="k-util">–</div><svg id="s-util"></svg><span class="tip"></span></div>
+    <div class="card kpi" data-k="temp"><div class="label">Temperature</div>
+      <div class="value num" id="k-temp">–</div><svg id="s-temp"></svg><span class="tip"></span></div>
+    <div class="card kpi" data-k="power"><div class="label">Power draw</div>
+      <div class="value num" id="k-power">–</div><svg id="s-power"></svg><span class="tip"></span></div>
+  </section>
+
+  <section class="main">
+    <div class="card">
+      <div class="card-h"><h2>Dream screen</h2><span style="display:flex;gap:12px;align-items:center"><span class="clock num" id="clock"></span><span class="pill" id="state"><i></i><span>Idle</span></span></span></div>
+      <div class="card-b">
+        <div id="screen">
+          <img id="frame" alt="Latest dream frame" hidden>
+          <div class="fsbar"><span id="fsinfo"></span><span>Space pause · F or Esc exit</span></div>
+          <div class="empty" id="empty"><div><b>No dream yet</b>Start a run and frames will stream in here.</div></div>
+        </div>
+        <input type="range" class="scrub" id="scrub" min="0" max="0" value="0" aria-label="Frame">
+        <div class="toolbar">
+          <button id="play" aria-pressed="true">Pause</button>
+          <button id="follow" aria-pressed="true">Follow newest run</button>
+          <button id="fs" title="Full screen (F)">⛶ Full screen</button>
+          <label>Speed <input id="fps" type="range" min="2" max="30" value="16"> <span class="num" id="fpsv">16 fps</span></label>
+          <span class="frameno num" id="pos"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <div class="card-h"><h2>Run</h2><span class="hint num" id="runid"></span></div>
+        <div class="card-b">
+          <dl>
+            <dt>Photo</dt><dd id="r-image">–</dd>
+            <dt>Prompt</dt><dd id="r-prompt">–</dd>
+            <dt>Walk</dt><dd id="r-pose">–</dd>
+            <dt>Stage</dt><dd id="r-stage">–</dd>
+            <dt>Elapsed</dt><dd class="num" id="r-time">–</dd>
+            <dt>Frames</dt><dd class="num" id="r-frames">–</dd>
+            <dt>Peak VRAM</dt><dd class="num" id="r-peak">–</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="card">
+      <div class="card-h"><h2>Run log</h2><span class="hint">last 14 lines</span></div>
+      <pre class="log" id="log">Nothing running yet.</pre>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Runs</h2><span class="hint">click to replay</span></div>
+      <div class="tablewrap">
+        <table><thead><tr><th>Started</th><th>Photo</th><th>Frames</th><th>Status</th></tr></thead>
+          <tbody id="runs"><tr><td colspan="4">None yet</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="traincard" hidden>
+    <div class="card-h"><h2>Training · loss</h2><span class="hint">lower = the model's guesses are less wrong · hover for values</span></div>
+    <div class="card-b">
+      <div class="kpis" style="margin-bottom:14px">
+        <div><div class="hint">Step</div><div class="num" style="font-size:20px;font-weight:600" id="t-step">–</div></div>
+        <div><div class="hint">Loss (latest)</div><div class="num" style="font-size:20px;font-weight:600" id="t-loss">–</div></div>
+        <div><div class="hint">Speed</div><div class="num" style="font-size:20px;font-weight:600" id="t-its">–</div></div>
+        <div><div class="hint">Training time</div><div class="num" style="font-size:20px;font-weight:600" id="t-time">–</div></div>
+      </div>
+      <div style="position:relative">
+        <svg id="losschart" style="width:100%;height:220px;display:block;overflow:visible"></svg>
+        <div id="losstip" class="tip" style="position:absolute;display:none;pointer-events:none;font-size:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--text-primary)"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="checkcard" hidden>
+    <div class="card-h"><h2>Check-ups · honest melt score</h2><span class="hint">every 45 min while training · 5 walks × 2 seeds × 40 s · lower = better · real video ≈ 0.13</span></div>
+    <div class="card-b">
+      <div class="kpis" style="margin-bottom:14px">
+        <div><div class="hint">Latest check-up</div><div class="num" style="font-size:20px;font-weight:600" id="c-last">–</div></div>
+        <div><div class="hint">Best so far</div><div class="num" style="font-size:20px;font-weight:600" id="c-best">–</div></div>
+        <div><div class="hint">Colour glitch after (latest)</div><div class="num" style="font-size:20px;font-weight:600" id="c-glitch">–</div></div>
+        <div><div class="hint">Held-out loss (latest)</div><div class="num" style="font-size:20px;font-weight:600" id="c-val">–</div></div>
+      </div>
+      <svg id="checkchart" style="width:100%;height:200px;display:block;overflow:visible"></svg>
+      <div class="tablewrap" style="margin-top:12px">
+        <table><thead><tr><th>Step</th><th>Time</th><th>Melt (memory)</th><th>Melt (no memory)</th><th>Glitch after</th><th>Held-out loss</th><th>Memory return</th></tr></thead>
+          <tbody id="checkrows"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="scorecard" hidden>
+    <div class="card-h"><h2>Scoreboard · every model, same honest test</h2><span class="hint">10 walks × 2 seeds × 40 s · lower = better · dashed line = v9 pick, the champ</span></div>
+    <div class="card-b"><div id="scores"></div></div>
+  </section>
+
+  <section class="card" id="datacard" hidden>
+    <div class="card-h"><h2>Training data</h2><span class="hint num" id="datasum"></span></div>
+    <div class="card-b" id="dataset"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><h2>Finished videos</h2></div>
+    <div class="card-b"><div class="vids" id="vids"><span class="hint">None yet</span></div></div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtTime = s => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60);
+  return m ? `${m}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`; };
+// a run is finished once it has an exit code; 0 = ended normally, anything else = crashed/stopped
+const isBad  = r => r.stage === "crashed" || (r.exit != null && r.exit !== 0);
+const isDone = r => !isBad(r) && (r.exit != null || String(r.stage).startsWith("done"));
+
+// ---------- sparklines: last 2 minutes of each GPU number ----------
+const HIST = 120;
+const hist = { vram: [], util: [], temp: [], power: [] };
+const units = { vram: " GB", util: "%", temp: "°C", power: " W" };
+const fixedMax = { vram: 32, util: 100 };   // known ceilings; temp/power scale to the data
+
+function spark(key) {
+  const svg = $("s-" + key), data = hist[key];
+  const W = svg.clientWidth || 200, H = 38;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  if (data.length < 2) { svg.innerHTML = ""; return; }
+  const max = fixedMax[key] ?? Math.max(...data) * 1.15, min = fixedMax[key] ? 0 : Math.min(...data) * 0.85;
+  const x = i => (i / (HIST - 1)) * W, y = v => H - 2 - ((v - min) / ((max - min) || 1)) * (H - 4);
+  const off = HIST - data.length;
+  const pts = data.map((v, i) => `${x(i + off).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const last = data.length - 1;
+  svg.innerHTML =
+    `<line x1="0" x2="${W}" y1="${H - 1}" y2="${H - 1}" stroke="var(--border)" stroke-width="1"/>` +
+    `<polyline points="${x(off)},${H - 1} ${pts} ${x(last + off)},${H - 1}" fill="var(--series-1)" fill-opacity=".12" stroke="none"/>` +
+    `<polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
+    `<circle cx="${x(last + off)}" cy="${y(data[last])}" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"/>` +
+    `<line class="xh" x1="0" x2="0" y1="0" y2="${H}" stroke="var(--text-muted)" stroke-width="1" visibility="hidden"/>`;
+}
+// hover: crosshair + value, how many seconds ago
+document.querySelectorAll(".kpi").forEach(card => {
+  const key = card.dataset.k, svg = card.querySelector("svg"), tip = card.querySelector(".tip");
+  svg.addEventListener("mousemove", e => {
+    const data = hist[key]; if (!data.length) return;
+    const r = svg.getBoundingClientRect(), W = r.width;
+    const i = Math.round(((e.clientX - r.left) / W) * (HIST - 1)) - (HIST - data.length);
+    if (i < 0 || i >= data.length) { tip.style.display = "none"; return; }
+    const xh = svg.querySelector(".xh"); const px = ((i + HIST - data.length) / (HIST - 1)) * W;
+    xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("visibility", "visible");
+    const ago = data.length - 1 - i;
+    tip.textContent = `${data[i]}${units[key]} · ${ago ? ago + "s ago" : "now"}`; tip.style.display = "block";
+  });
+  svg.addEventListener("mouseleave", () => { tip.style.display = "none";
+    const xh = svg.querySelector(".xh"); if (xh) xh.setAttribute("visibility", "hidden"); });
+});
+
+// ---------- runs + frame playback ----------
+let lastVidKey = null, lastDataKey = null;
+let runs = [], picked = null, follow = true, playing = true, idx = 0, fps = 16;
+const cache = {};   // run url -> preloaded Image objects
+const current = () => runs.find(r => r.run === picked) || null;
+// What to call a run. Training runs are named by the version at the front of their id
+// ("v4-20261020-0037" -> "v4 dream model"), so a trainer that reports a stale name can't mislead.
+const runName = r => {
+  if (r.kind !== "train") return r.image || r.kind;
+  const v = (r.run.match(/^(v\d+)/) || [])[1];
+  return v ? `${v} dream model` : (r.image || "dream model v0");
+};
+
+function preload(run) {
+  const arr = cache[run.url] || (cache[run.url] = []);
+  for (let i = arr.length; i < run.frames; i++) {
+    const im = new Image(); im.src = `${run.url}frame_${String(i).padStart(5, "0")}.jpg`; arr.push(im);
+  }
+  return arr;
+}
+
+function setPill(r) {
+  const p = $("state"), t = p.querySelector("span");
+  if (!r) { p.className = "pill"; t.textContent = "Idle"; return; }
+  if (isDone(r)) { p.className = "pill good"; t.textContent = "Run finished"; }
+  else if (isBad(r)) { p.className = "pill bad"; t.textContent = "Run crashed"; }
+  else if (r.frames) { p.className = "pill live"; t.textContent = "Live · dreaming"; }
+  else { p.className = "pill busy"; t.textContent = "Loading model"; }
+}
+
+async function poll() {
+  let d;
+  try { d = await (await fetch("/api/status")).json(); } catch { setTimeout(poll, 2000); return; }
+  runs = d.runs;
+  if (follow && runs.length) picked = runs[0].run;
+
+  // GPU tiles
+  const g = d.gpu;
+  if (g) {
+    const vals = { vram: g.used_gb, util: g.util, temp: g.temp, power: g.power };
+    for (const k in vals) { hist[k].push(vals[k]); if (hist[k].length > HIST) hist[k].shift(); spark(k); }
+    $("k-vram").innerHTML = `${g.used_gb.toFixed(1)}<small>/ ${g.total_gb} GB</small>`;
+    $("k-util").innerHTML = `${g.util}<small>%</small>`;
+    $("k-temp").innerHTML = `${g.temp}<small>°C</small>`;
+    $("k-power").innerHTML = `${g.power}<small>W</small>`;
+  }
+
+  // runs table
+  $("runs").innerHTML = runs.length ? runs.map(r => {
+    const cls = isDone(r) ? "s-done" : isBad(r) ? "s-bad" : "s-run";
+    const label = isDone(r) ? "Done" : isBad(r) ? "Crashed" : "Running";
+    const when = new Date(r.started * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `<tr data-run="${esc(r.run)}" class="${r.run === picked ? "sel" : ""}">
+      <td class="num">${when}</td><td>${esc(runName(r))}</td><td class="num">${r.frames}</td>
+      <td><span class="status ${cls}">${label}</span></td></tr>`;
+  }).join("") : `<tr><td colspan="4">None yet</td></tr>`;
+  document.querySelectorAll("#runs tr[data-run]").forEach(tr => tr.onclick = () => {
+    picked = tr.dataset.run; follow = false; idx = 0; $("follow").setAttribute("aria-pressed", "false"); poll();
+  });
+
+  // training card: shown when the selected run is a training run
+  const tr = current();
+  const isTrain = tr && tr.kind === "train";
+  $("traincard").hidden = !isTrain;
+  if (isTrain) {
+    $("t-step").textContent = (tr.step ?? 0).toLocaleString();
+    $("t-loss").textContent = tr.loss != null ? tr.loss.toFixed(4) : "–";
+    $("t-its").textContent = tr.it_s != null ? `${tr.it_s.toFixed(1)} it/s` : "–";
+    $("t-time").textContent = fmtTime(tr.seconds ?? (Date.now() / 1000 - tr.started));
+    lossPts = (tr.metrics || []).filter(p => p.loss != null);
+    drawLoss();
+  }
+  // check-ups (honest melt score per check-up) of the selected run
+  const cks = (isTrain && tr.checkups) || [];
+  $("checkcard").hidden = !cks.length;
+  if (cks.length) drawCheckups(cks);
+  // scoreboard: every model the 20-walk judge has scored
+  $("scorecard").hidden = !(d.scores && d.scores.length);
+  if (d.scores && d.scores.length) drawScores(d.scores);
+
+  // training data (step 1): one row per city, with an 8-frame preview strip once ready
+  const ds = d.dataset;
+  $("datacard").hidden = !ds;
+  if (ds) {
+    const vids = Object.entries(ds.videos || {});
+    const hrs = vids.reduce((a, [, v]) => a + (v.hours || 0), 0);
+    const frames = vids.reduce((a, [, v]) => a + (v.frames || 0), 0);
+    const ready = vids.filter(([, v]) => v.stage === "ready").length;
+    $("datasum").textContent = `${ready} of ${vids.length} ready · ${hrs.toFixed(1)} h · ${frames.toLocaleString()} frames`;
+    const dkey = JSON.stringify(ds);
+    if (dkey !== lastDataKey) { lastDataKey = dkey;
+    $("dataset").innerHTML = vids.map(([city, v]) => {
+      const done = v.stage === "ready";
+      const pct = done ? 100 : (v.pct ?? null);
+      return `<div class="prog" style="margin-bottom:16px">
+        <div class="row"><span>${esc(city.replace(/_/g, " "))} <span class="hint">· ${v.hours} h · ${(v.frames || 0).toLocaleString()} frames</span></span>
+        <span class="num ${done ? "ok" : ""}">${done ? "✓ Ready" : esc(v.stage) + (pct != null ? ` · ${pct}%` : "…")}</span></div>
+        <div class="track"><div style="width:${pct ?? 100}%;${pct == null ? "opacity:.35" : ""}"></div></div>
+        ${v.preview ? `<img src="${v.preview}" alt="${esc(city)} preview frames" style="width:100%;margin-top:8px;border-radius:6px;display:block">` : ""}
+      </div>`;
+    }).join(""); }
+  }
+
+  // videos
+  // only redraw when the list changes, or the <video> tags reload every second
+  const vkey = d.videos.map(v => v.name + v.time).join("|");
+  if (vkey !== lastVidKey) { lastVidKey = vkey;
+  $("vids").innerHTML = d.videos.length ? d.videos.slice(0, 9).map(v =>
+    `<figure><video src="${v.url}" controls loop muted playsinline preload="metadata"></video>
+     <figcaption>${esc(v.name)}</figcaption></figure>`).join("") : `<span class="hint">None yet</span>`; }
+
+  // selected run
+  const r = current();
+  setPill(r);
+  if (r) {
+    preload(r);
+    const secs = r.seconds ?? (Date.now() / 1000 - r.started);
+    $("runid").textContent = r.run;
+    $("r-image").textContent = runName(r);
+    $("r-prompt").textContent = r.prompt || "–";
+    $("r-pose").innerHTML = r.pose ? `<code>${esc(r.pose)}</code>` : "–";
+    $("r-stage").textContent = r.stage;
+    $("r-time").textContent = fmtTime(secs);
+    $("r-frames").textContent = r.frames;
+    $("r-peak").textContent = `${r.peak_vram_gb} GB of 32 GB`;
+    $("log").textContent = (r.log || []).join("\n") || "(no output yet)";
+    $("log").scrollTop = 1e9;
+  }
+  setTimeout(poll, 1000);
+}
+
+// ---------- loss chart: one series (smoothed loss vs step), so no legend; the title names it ----------
+let lossPts = [];
+const PAD = { l: 52, r: 12, t: 10, b: 26 };
+function smooth(vals, k = 0.9) {           // exponential moving average: raw diffusion loss is very noisy
+  let m = null; return vals.map(v => (m = m == null ? v : k * m + (1 - k) * v));
+}
+function niceTicks(lo, hi, n = 4) {
+  const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
+  const step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(s => s >= step0);
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step) out.push(+v.toPrecision(6));
+  return out;
+}
+function drawLoss() {
+  const svg = $("losschart"), W = svg.clientWidth || 600, H = 220;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  if (lossPts.length < 2) {
+    svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="var(--text-muted)" font-size="13">waiting for the first numbers…</text>`;
+    return;
+  }
+  const xs = lossPts.map(p => p.step), ys = smooth(lossPts.map(p => p.loss));
+  lossPts.forEach((p, i) => p.sm = ys[i]);
+  const x0 = xs[0], x1 = xs[xs.length - 1];
+  const yT = niceTicks(Math.min(...ys), Math.max(...ys));
+  const y0 = Math.min(yT[0], Math.min(...ys)), y1 = Math.max(yT[yT.length - 1], Math.max(...ys));
+  const X = v => PAD.l + (v - x0) / ((x1 - x0) || 1) * (W - PAD.l - PAD.r);
+  const Y = v => H - PAD.b - (v - y0) / ((y1 - y0) || 1) * (H - PAD.t - PAD.b);
+  const grid = yT.map(v => `<line x1="${PAD.l}" x2="${W - PAD.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)" stroke-width="1"/>
+    <text x="${PAD.l - 8}" y="${Y(v) + 4}" text-anchor="end" fill="var(--text-muted)" font-size="11">${v}</text>`).join("");
+  const xT = niceTicks(x0, x1, 5).map(v => `<text x="${X(v)}" y="${H - 6}" text-anchor="middle" fill="var(--text-muted)" font-size="11">${v >= 1000 ? (v / 1000) + "k" : v}</text>`).join("");
+  const line = lossPts.map(p => `${X(p.step).toFixed(1)},${Y(p.sm).toFixed(1)}`).join(" ");
+  const last = lossPts[lossPts.length - 1];
+  svg.innerHTML = grid + xT +
+    `<text x="${PAD.l}" y="${PAD.t - 2}" fill="var(--text-muted)" font-size="11">loss (smoothed) by training step</text>` +
+    `<polyline points="${line}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
+    `<circle cx="${X(last.step)}" cy="${Y(last.sm)}" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"/>` +
+    `<line id="lxh" y1="${PAD.t}" y2="${H - PAD.b}" stroke="var(--text-muted)" visibility="hidden"/>` +
+    `<circle id="ldot" r="5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" visibility="hidden"/>`;
+  svg._map = { X, Y };
+}
+$("losschart").addEventListener("mousemove", e => {
+  const svg = $("losschart"), m = svg._map; if (!m || lossPts.length < 2) return;
+  const r = svg.getBoundingClientRect(), px = e.clientX - r.left;
+  let best = lossPts[0]; for (const p of lossPts) if (Math.abs(m.X(p.step) - px) < Math.abs(m.X(best.step) - px)) best = p;
+  const xh = $("lxh"), dot = $("ldot"), tip = $("losstip");
+  xh.setAttribute("x1", m.X(best.step)); xh.setAttribute("x2", m.X(best.step)); xh.setAttribute("visibility", "visible");
+  dot.setAttribute("cx", m.X(best.step)); dot.setAttribute("cy", m.Y(best.sm)); dot.setAttribute("visibility", "visible");
+  tip.textContent = `step ${best.step.toLocaleString()} · loss ${best.sm.toFixed(4)} (raw ${best.loss.toFixed(4)})`;
+  tip.style.display = "block";
+  tip.style.left = Math.min(r.width - 220, Math.max(0, m.X(best.step) + 10)) + "px"; tip.style.top = "4px";
+});
+// ---------- check-ups: honest melt score per check-up (dots + line), best one ringed ----------
+let lastCheckKey = null;
+function drawCheckups(cks) {
+  const key = cks.map(c => c.step + ":" + c.melt).join("|") + "|" + ($("checkchart").clientWidth || 0);
+  if (key === lastCheckKey) return; lastCheckKey = key;
+  const pts = cks.filter(c => c.melt != null);
+  const last = cks[cks.length - 1];
+  const best = pts.reduce((a, c) => (a == null || c.melt < a.melt ? c : a), null);
+  const f3 = v => v == null ? "–" : v.toFixed(3);
+  $("c-last").textContent = last.melt != null ? `${f3(last.melt)} (step ${(last.step / 1000).toFixed(1)}k)` : "–";
+  $("c-best").textContent = best ? `${f3(best.melt)} (step ${(best.step / 1000).toFixed(1)}k)` : "–";
+  $("c-glitch").textContent = last.glitch != null ? `${last.glitch.toFixed(0)} s of 40` : "–";
+  $("c-val").textContent = last.val_loss != null ? last.val_loss.toFixed(4) : "–";
+  const hm = t => t ? new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "–";
+  $("checkrows").innerHTML = cks.slice().reverse().map(c => `<tr${c === best ? ' style="color:var(--good)"' : ""}>
+    <td class="num">${(c.step ?? 0).toLocaleString()}</td><td class="num">${hm(c.time)}</td>
+    <td class="num">${f3(c.melt)}${c === best ? " ★" : ""}</td><td class="num">${f3(c.melt_nomem)}</td>
+    <td class="num">${c.glitch != null ? c.glitch.toFixed(0) + " s" : "–"}</td>
+    <td class="num">${c.val_loss != null ? c.val_loss.toFixed(4) : "–"}</td>
+    <td class="num">${c.return_sim != null ? c.return_sim.toFixed(2) : "–"}</td></tr>`).join("");
+  const svg = $("checkchart"), W = svg.clientWidth || 600, H = 200;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  if (pts.length < 1) { svg.innerHTML = ""; return; }
+  const ys = pts.map(p => p.melt), xs = pts.map(p => p.step);
+  const yT = niceTicks(Math.min(...ys) - 0.03, Math.max(...ys) + 0.03);
+  const y0 = Math.min(yT[0], Math.min(...ys)), y1 = Math.max(yT[yT.length - 1], Math.max(...ys));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const X = v => PAD.l + (x1 > x0 ? (v - x0) / (x1 - x0) : 0.5) * (W - PAD.l - PAD.r - 30);
+  const Y = v => H - PAD.b - (v - y0) / ((y1 - y0) || 1) * (H - PAD.t - PAD.b);
+  const grid = yT.map(v => `<line x1="${PAD.l}" x2="${W - PAD.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)"/>
+    <text x="${PAD.l - 8}" y="${Y(v) + 4}" text-anchor="end" fill="var(--text-muted)" font-size="11">${v}</text>`).join("");
+  const xT = pts.map(p => `<text x="${X(p.step)}" y="${H - 6}" text-anchor="middle" fill="var(--text-muted)" font-size="11">${(p.step / 1000).toFixed(1)}k</text>`).join("");
+  const line = pts.map(p => `${X(p.step).toFixed(1)},${Y(p.melt).toFixed(1)}`).join(" ");
+  const dots = pts.map(p => `<circle cx="${X(p.step)}" cy="${Y(p.melt)}" r="${p === best ? 6 : 4}" fill="${p === best ? "var(--good)" : "var(--series-1)"}" stroke="var(--surface-1)" stroke-width="2"/>`).join("");
+  const lab = [best, pts[pts.length - 1]].filter((p, i, a) => p && a.indexOf(p) === i).map(p =>
+    `<text x="${X(p.step) + 9}" y="${Y(p.melt) - 8}" fill="${p === best ? "var(--good)" : "var(--text-secondary)"}" font-size="12" font-weight="600">${p.melt.toFixed(3)}</text>`).join("");
+  svg.innerHTML = grid + xT + `<text x="${PAD.l}" y="${PAD.t - 2}" fill="var(--text-muted)" font-size="11">melt score by training step (lower = better)</text>` +
+    `<polyline points="${line}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>` + dots + lab;
+}
+
+// ---------- scoreboard: one bar per model, best first ----------
+const NICE = {
+  "REAL video": "real video (the target)", "v9pick": "v9 pick · 1x · play default",
+  "v11_best33k": "v11 pick · 2x", "v11_s15k": "v11 step 15k · 2x", "v11_s29k": "v11 step 29k · 2x", "v11_final": "v11 final · 2x",
+  "v11_noise2x": "v11 + 2x start noise (untrained)", "v11_noise1p4x": "v11 + 1.4x start noise (untrained)",
+  "v111_deep": "v11.1 deep layers", "v111_deepnoise2": "v11.1 deep + 2x noise", "v111_noise2": "v11.1 2x noise",
+  "v111_noise2sharp": "v11.1 2x noise + detail", "v111_noise2_12steps": "v11.1 2x noise, 12 steps", "v111_control": "v11.1 plain (control)",
+  "fuel_s0": "learned fuel · seed 0", "fuel_s1": "learned fuel · seed 1", "ctrl_s1": "no fuel (control) · seed 1",
+  "fuel_s0_noref": "learned fuel, reference OFF", "fuel_s0_refevery1": "learned fuel, new ref every frame",
+  "fuel_s0_refevery40": "learned fuel, new ref every 4 s", "fuel_6k": "learned fuel · 6000 steps",
+};
+let lastScoreKey = null;
+function drawScores(rows) {
+  const key = rows.map(r => r.name + r.melt).join("|");
+  if (key === lastScoreKey) return; lastScoreKey = key;
+  const champ = (rows.find(r => r.name === "v9pick") || {}).melt;
+  const MAX = 0.8, now = Date.now() / 1000;
+  const pct = v => Math.min(v, MAX) / MAX * 58;            // bars use at most 58% of the row, so the score fits after them
+  $("scores").innerHTML = `<div style="position:relative">` + rows.map(r => {
+    const ref = r.name === "REAL video" || r.name === "v9pick";
+    const beat = !ref && champ != null && r.melt < champ;
+    const isNew = !ref && now - r.time < 3 * 3600;
+    const col = ref ? "#6c727d" : beat ? "var(--good)" : /fuel|ctrl/.test(r.name) ? "var(--series-1)" : "#3d4f6a";
+    return `<div class="srow">
+      <div class="sname" title="${esc(r.name)} (judge: ${esc(r.judge)})">${esc(NICE[r.name] || r.name)}${isNew ? ' <span style="font-size:10px;font-weight:700;color:var(--warning)">NEW</span>' : ""}</div>
+      <div style="position:relative;height:22px">
+        <div style="position:absolute;left:0;top:3px;height:16px;width:${pct(r.melt)}%;background:${col};border-radius:4px"></div>
+        ${champ != null ? `<div style="position:absolute;left:${pct(champ)}%;top:-3px;bottom:-3px;border-left:2px dashed #a4a9b3aa"></div>` : ""}
+        <div class="num" style="position:absolute;left:calc(${pct(r.melt)}% + 8px);top:1px;font-size:12.5px;font-weight:600;white-space:nowrap">${r.melt.toFixed(3)}<span style="color:var(--text-muted);font-weight:400">${r.melt_s != null && r.melt_s < 40 ? ` · melts ~${r.melt_s.toFixed(0)} s` : ""}</span></div>
+      </div></div>`;
+  }).join("") + `</div>`;
+}
+window.addEventListener("resize", () => { lastCheckKey = null; });
+
+$("losschart").addEventListener("mouseleave", () => {
+  $("losstip").style.display = "none";
+  ["lxh", "ldot"].forEach(id => { const el = $(id); if (el) el.setAttribute("visibility", "hidden"); });
+});
+
+function tick() {
+  const r = current(), arr = r ? (cache[r.url] || []) : [];
+  const scrub = $("scrub");
+  if (arr.length) {
+    $("empty").hidden = true; $("frame").hidden = false;
+    if (playing) idx = (idx + 1) % arr.length;
+    if (idx >= arr.length) idx = 0;
+    if (arr[idx].complete) $("frame").src = arr[idx].src;
+    scrub.max = arr.length - 1; scrub.value = idx;
+    $("pos").textContent = `Frame ${idx + 1} of ${arr.length}`;
+    $("fsinfo").textContent = `${runName(r)} · frame ${idx + 1} / ${arr.length}${playing ? "" : " · paused"}`;
+  } else {
+    $("empty").hidden = false; $("frame").hidden = true; scrub.max = 0; $("pos").textContent = "";
+    if (r && !isBad(r)) $("empty").innerHTML = `<div><b>${esc(r.stage)}…</b>Loading a 5B model takes a few minutes. Frames stream in here once it starts dreaming.</div>`;
+    else if (r) $("empty").innerHTML = `<div><b>Run crashed</b>See the run log below.</div>`;
+  }
+  setTimeout(tick, 1000 / fps);
+}
+
+$("scrub").oninput = e => { idx = +e.target.value; playing = false; $("play").textContent = "Play"; $("play").setAttribute("aria-pressed", "false"); };
+$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "Pause" : "Play"; $("play").setAttribute("aria-pressed", playing); };
+$("follow").onclick = () => { follow = !follow; $("follow").setAttribute("aria-pressed", follow); poll(); };
+// full screen: button, F key, double-click the screen; Space toggles pause
+// Real full screen when the browser allows it; otherwise (e.g. inside an embedded pane)
+// the screen just covers the whole window ("big" mode).
+const isFull = () => !!document.fullscreenElement || $("screen").classList.contains("big");
+function setBig(on) {
+  $("screen").classList.toggle("big", on);
+  $("fs").textContent = on ? "Exit full screen" : "⛶ Full screen";
+}
+function toggleFull() {
+  if (document.fullscreenElement) return document.exitFullscreen();
+  if ($("screen").classList.contains("big")) return setBig(false);
+  const el = $("screen");
+  if (!el.requestFullscreen) return setBig(true);
+  el.requestFullscreen().catch(() => {});
+  // Some embedded browsers accept the request but never (or only briefly) go full
+  // screen. If we aren't full screen shortly after, cover the window instead.
+  setTimeout(() => { if (!document.fullscreenElement) setBig(true); }, 400);
+}
+$("fs").onclick = toggleFull;
+$("screen").ondblclick = toggleFull;
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "f" || e.key === "F") toggleFull();
+  if (e.key === " " && isFull()) { e.preventDefault(); $("play").click(); }
+  if (e.key === "Escape" && $("screen").classList.contains("big")) setBig(false);
+});
+document.addEventListener("fullscreenchange", () => {
+  $("fs").textContent = document.fullscreenElement ? "Exit full screen" : "⛶ Full screen";
+});
+$("fps").oninput = e => { fps = +e.target.value; $("fpsv").textContent = fps + " fps"; };
+setInterval(() => $("clock").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }), 1000);
+
+poll(); tick();
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+# Data: videos, frame caches, labels (never published)
+data/
+photos/
+taste/
+
+# Model weights and training outputs (never published)
+checkpoints/
+train/checkpoints/
+runs/
+outputs/
+train/out/
+train/live/
+train/_exp/
+train/_smoke/
+train/sr/out/
+train/sr/checkpoints/
+train/painter/out/
+train/dial/
+prep/preview/
+prep/status/
+*.pt
+*.pth
+*.onnx
+*.npy
+*.npz
+*.u8
+*.mp4
+*.log
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
